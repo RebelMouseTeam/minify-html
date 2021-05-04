@@ -234,7 +234,9 @@ pub fn process_tag(
             return match closing_tag {
                 Some(tag) => {
                     proc.make_lowercase(tag);
-                    if proc[tag] != proc[tag_name] {
+                    if proc[tag] == proc[tag_name] {
+                        proc.m(IsSeq(b">"), Discard);
+                    }else{
                         closing_tag_checkpoint.restore(proc);
                     }
                     Ok(MaybeClosingTag(None))
