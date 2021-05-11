@@ -9,7 +9,7 @@ use crate::proc::Processor;
 use {
     std::sync::Arc,
     minify::json::minify,
-    crate::proc::{EsbuildSection, ResultType},
+    crate::proc::EsbuildSection,
     crate::proc::checkpoint::WriteCheckpoint,
 };
 
@@ -35,7 +35,7 @@ pub fn process_json(proc: &mut Processor, cfg: &Cfg) -> ProcessingResult<()> {
         let mut guard = results.lock().unwrap();
         guard.push(EsbuildSection {
             src,
-            result: ResultType::StringResult(result),
+            escaped: result.as_bytes().to_vec(),
         });
         drop(guard);
         drop(results);
