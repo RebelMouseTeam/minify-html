@@ -179,6 +179,8 @@ fn test_removal_of_optional_closing_p_tag() {
 fn test_attr_double_quoted_value_minification() {
     eval(b"<a b=\" hello \"></a>", b"<a b=\" hello \"></a>");
     eval(b"<a b=' hello '></a>", b"<a b=\" hello \"></a>");
+    eval(br#"<a b="/>aaaa"></a>"#, br#"<a b="/>aaaa"></a>"#);
+    eval(br#"<a b="</a>a"></a>"#, br#"<a b="</a>a"></a>"#);
     eval(b"<a b=&#x20;hello&#x20;></a>", b"<a b=\" hello \"></a>");
     eval(b"<a b=&#x20hello&#x20></a>", b"<a b=\" hello \"></a>");
 }
@@ -187,13 +189,18 @@ fn test_attr_double_quoted_value_minification() {
 fn test_attr_single_quoted_value_minification() {
     eval(b"<a b=\"&quot;hello\"></a>", b"<a b='\"hello'></a>");
     eval(b"<a b='\"hello'></a>", b"<a b='\"hello'></a>");
-    eval(b"<a b=&#x20;he&quotllo&#x20;></a>", b"<a b=' he\"llo '></a>");
+    eval(b"<a b='/>a'></a>", b"<a b=\"/>a\"></a>");
+    eval(b"<a b=&#x20;he&quot;llo&#x20;></a>", b"<a b=' he\"llo '></a>");
 }
 
 #[test]
 fn test_attr_unquoted_value_minification() {
+    eval(b"<a b==></a>", b"<a b==></a>");
+    eval(b"<a b=`'\"<<==/`/></a>", b"<a b=`'\"<<==/`/></a>");
     eval(b"<a b=\"hello\"></a>", b"<a b=hello></a>");
     eval(b"<a b='hello'></a>", b"<a b=hello></a>");
+    eval(b"<a b=/&gt></a>", br#"<a b="/>"></a>"#);
+    eval(b"<a b=/&gt&lt;a></a>", br#"<a b="/><a"></a>"#);
     eval(b"<a b=hello></a>", b"<a b=hello></a>");
 }
 
@@ -288,13 +295,6 @@ fn test_space_between_attrs_minification() {
 }
 
 #[test]
-fn test_attr_value_backtick() {
-    // The backtick is not interpreted as a quote; as such, the "b" attribute is interpreted as having an empty value,
-    // and the "`hello`" attribute is a boolean attribute (also empty value).
-    eval(b"<a b=`hello`></a>", b"<a b `hello`></a>");
-}
-
-#[test]
 fn test_hexadecimal_entity_decoding() {
     eval(b"&#x2E", b".");
     eval(b"&#x2F", b"/");
@@ -338,6 +338,12 @@ fn test_named_entity_decoding() {
     eval(b"&nLt;", b"&nLt;");
     eval(b"&nLt;abc", b"&nLt;abc");
     eval(b"&nGt;", b"&nGt;");
+
+    // Named entities not ending with ';' in attr values are not decoded if immediately
+    // followed by an alphanumeric or `=` character. (See parser for more details.)
+    eval(br#"<a href="exam ple?&gta=5"></a>"#, br#"<a href="exam ple?&gta=5"></a>"#);
+    eval(br#"<a href="exam ple?&gt=5"></a>"#, br#"<a href="exam ple?&gt=5"></a>"#);
+    eval(br#"<a href="exam ple?&gt~5"></a>"#, br#"<a href="exam ple?>~5"></a>"#);
 }
 
 #[test]
@@ -443,6 +449,15 @@ fn test_js_minification() {
             let a = 1;
         </script>
     "#, b"<script>let a=1;</script>");
+}
+
+#[cfg(feature = "js-esbuild")]
+#[test]
+fn test_js_minification_unintentional_closing_tag() {
+    eval_with_js_min(br#"<script>let a = "</" + "script>";</script>"#, br#"<script>let a="<\/script>";</script>"#);
+    eval_with_js_min(br#"<script>let a = "</S" + "cRiPT>";</script>"#, br#"<script>let a="<\/ScRiPT>";</script>"#);
+    eval_with_js_min(br#"<script>let a = "\u003c/script>";</script>"#, br#"<script>let a="<\/script>";</script>"#);
+    eval_with_js_min(br#"<script>let a = "\u003c/scrIPt>";</script>"#, br#"<script>let a="<\/scrIPt>";</script>"#);
 }
 
 #[cfg(feature = "js-esbuild")]

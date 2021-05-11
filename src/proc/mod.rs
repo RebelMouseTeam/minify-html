@@ -3,20 +3,19 @@ use std::fmt::{Debug, Formatter};
 use std::ops::{Index, IndexMut};
 
 use aho_corasick::AhoCorasick;
-
-use crate::err::{Error, ErrorType, ProcessingResult, debug_repr};
-use crate::proc::MatchAction::*;
-use crate::proc::MatchMode::*;
-use crate::proc::range::ProcessorRange;
 use memchr::memchr;
-use crate::gen::codepoints::Lookup;
 
 #[cfg(feature = "js-esbuild")]
 use {
-    std::sync::{Arc, Mutex},
     crossbeam::sync::WaitGroup,
-    esbuild_rs::TransformResult,
+    std::sync::{Arc, Mutex},
 };
+
+use crate::err::{debug_repr, Error, ErrorType, ProcessingResult};
+use crate::gen::codepoints::Lookup;
+use crate::proc::MatchAction::*;
+use crate::proc::MatchMode::*;
+use crate::proc::range::ProcessorRange;
 
 pub mod checkpoint;
 pub mod entity;
@@ -54,7 +53,7 @@ pub enum MatchAction {
 #[cfg(feature = "js-esbuild")]
 pub struct EsbuildSection {
     pub src: ProcessorRange,
-    pub result: TransformResult,
+    pub escaped: Vec<u8>,
 }
 
 // Processing state of a file. Single use only; create one per processing.
@@ -381,13 +380,10 @@ impl<'d> Processor<'d> {
         // the write pointer after previous compaction.
         // If there are no script sections, then we get self.write_next which will be returned.
         let mut write_next = results.get(0).map_or(self.write_next, |r| r.src.start);
-        for (i, EsbuildSection { result, src }) in results.iter().enumerate() {
+        for (i, EsbuildSection { escaped: min_code, src }) in results.iter().enumerate() {
             // Resulting minified JS/CSS to write.
-            // TODO Verify.
-            // TODO Handle potential `</script>` in output code, which could be in string (e.g. orig. "</" + "script>"), comment, or expression (e.g. orig. `a < /script>/.exec(b)?.length`).
-            let min_code = result.code.as_str().trim();
             let min_len = if min_code.len() < src.len() {
-                self.code[write_next..write_next + min_code.len()].copy_from_slice(min_code.as_bytes());
+                self.code[write_next..write_next + min_code.len()].copy_from_slice(min_code);
                 min_code.len()
             } else {
                 // If minified result is actually longer than source, then write source instead.
