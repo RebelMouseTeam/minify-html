@@ -51,12 +51,6 @@ pub enum MatchAction {
 }
 
 #[cfg(feature = "js-esbuild")]
-pub enum ResultType{
-    EsBuildResult(TransformResult),
-    StringResult(String),
-}
-
-#[cfg(feature = "js-esbuild")]
 pub struct EsbuildSection {
     pub src: ProcessorRange,
     pub escaped: Vec<u8>,
