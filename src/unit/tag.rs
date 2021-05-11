@@ -179,18 +179,15 @@ pub fn process_tag(
                     .filter(|v| !JAVASCRIPT_MIME_TYPES.contains(&proc[*v]))
                     .is_none();
 
-                if script_tag_type_is_js {
-                    erase_attr = true;
-                } else {
+                erase_attr = false;
+                if !script_tag_type_is_js {
                     // Tag does not contain JS, don't minify JS.
-
                     let script_tag_type_is_style = value
                        .filter(|v| !SCRIPTSTYLES_MIME_TYPES.contains(&proc[*v]))
                         .is_none();
                     
                     if script_tag_type_is_style {
                         tag_type = TagType::ScriptStyle;
-                        erase_attr = false;
                     } else {
                         let script_tag_type_is_json = value
                             .filter(|v| !JSON_MIME_TYPES.contains(&proc[*v]))
@@ -198,8 +195,8 @@ pub fn process_tag(
 
                         if script_tag_type_is_json {
                             tag_type = TagType::JsonData;
-                            erase_attr = false;
                         }else{
+                            erase_attr = true;
                             tag_type = TagType::ScriptData;
                         }
                     }
@@ -274,7 +271,7 @@ pub fn process_tag(
 
     let mut closing_tag_omitted = false;
     match tag_type {
-        TagType::ScriptData => process_json(proc, cfg)?,
+        TagType::ScriptData => process_script(proc, cfg, false)?,
         TagType::JsonData => process_json(proc, cfg)?,
         TagType::ScriptJs => process_script(proc, cfg, true)?,
         TagType::ScriptStyle => process_style(proc, cfg, true)?,
