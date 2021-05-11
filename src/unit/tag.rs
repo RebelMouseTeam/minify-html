@@ -10,6 +10,7 @@ use crate::spec::tag::void::VOID_TAGS;
 use crate::unit::attr::{AttrType, process_attr, ProcessedAttr};
 use crate::unit::content::process_content;
 use crate::unit::script::process_script;
+use crate::unit::jsonscript::process_json;
 use crate::unit::style::process_style;
 use crate::gen::attrs::{ATTRS, AttributeMinification};
 use crate::spec::tag::ns::Namespace;
@@ -39,6 +40,13 @@ lazy_static! {
         s.insert(b"text/rmscript");
         s
     };
+    
+    pub static ref JSON_MIME_TYPES: HashSet<&'static [u8]> = {
+        let mut s = HashSet::<&'static [u8]>::new();
+        s.insert(b"application/json");
+        s.insert(b"application/ld+json");
+        s
+    };
 
     pub static ref SCRIPTSTYLES_MIME_TYPES: HashSet<&'static [u8]> = {
         let mut s = HashSet::<&'static [u8]>::new();
@@ -50,6 +58,7 @@ lazy_static! {
 #[derive(Copy, Clone)]
 enum TagType {
     ScriptJs,
+    JsonData,
     ScriptData,
     ScriptStyle,
     Style,
@@ -183,7 +192,16 @@ pub fn process_tag(
                         tag_type = TagType::ScriptStyle;
                         erase_attr = false;
                     } else {
-                        tag_type = TagType::ScriptData;
+                        let script_tag_type_is_json = value
+                            .filter(|v| !JSON_MIME_TYPES.contains(&proc[*v]))
+                            .is_none();
+
+                        if script_tag_type_is_json {
+                            tag_type = TagType::JsonData;
+                            erase_attr = false;
+                        }else{
+                            tag_type = TagType::ScriptData;
+                        }
                     }
                 };
             }
@@ -256,7 +274,8 @@ pub fn process_tag(
 
     let mut closing_tag_omitted = false;
     match tag_type {
-        TagType::ScriptData => process_script(proc, cfg, false)?,
+        TagType::ScriptData => process_json(proc, cfg)?,
+        TagType::JsonData => process_json(proc, cfg)?,
         TagType::ScriptJs => process_script(proc, cfg, true)?,
         TagType::ScriptStyle => process_style(proc, cfg, true)?,
         TagType::Style => process_style(proc, cfg, false)?,

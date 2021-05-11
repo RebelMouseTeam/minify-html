@@ -9,7 +9,6 @@ use crate::proc::Processor;
 use {
     std::sync::Arc,
     esbuild_rs::{TransformOptionsBuilder, TransformOptions},
-    minify::json::minify,
     crate::proc::{EsbuildSection, ResultType},
     crate::proc::checkpoint::WriteCheckpoint,
 };
@@ -39,36 +38,23 @@ pub fn process_script(proc: &mut Processor, cfg: &Cfg, js: bool) -> ProcessingRe
 
     // TODO This is copied from style.rs.
     #[cfg(feature = "js-esbuild")]
-    if cfg.minify_js {
-        let src = start.written_range(proc);
+    if js && cfg.minify_js {
         let (wg, results) = proc.new_esbuild_section();
-        if js {
-            unsafe {
-                esbuild_rs::transform_direct_unmanaged(&proc[src], &TRANSFORM_OPTIONS.clone(), move |result| {
-                    let mut guard = results.lock().unwrap();
-                    guard.push(EsbuildSection {
-                        src,
-                        result: ResultType::EsBuildResult(result),
-                    });
-                    // Drop Arc reference and Mutex guard before marking task as complete as it's possible proc::finish
-                    // waiting on WaitGroup will resume before Arc/Mutex is dropped after exiting this function.
-                    drop(guard);
-                    drop(results);
-                    drop(wg);
+        let src = start.written_range(proc);
+        unsafe {
+            esbuild_rs::transform_direct_unmanaged(&proc[src], &TRANSFORM_OPTIONS.clone(), move |result| {
+                let mut guard = results.lock().unwrap();
+                guard.push(EsbuildSection {
+                    src,
+                    result: ResultType::EsBuildResult(result),
                 });
-            };
-        } else {
-            let raw_json = unsafe { String::from_utf8_unchecked(proc[src].to_vec()) };
-            let result = minify(&raw_json[..]);
-            let mut guard = results.lock().unwrap();
-            guard.push(EsbuildSection {
-                src,
-                result: ResultType::StringResult(result),
+                // Drop Arc reference and Mutex guard before marking task as complete as it's possible proc::finish
+                // waiting on WaitGroup will resume before Arc/Mutex is dropped after exiting this function.
+                drop(guard);
+                drop(results);
+                drop(wg);
             });
-            drop(guard);
-            drop(results);
-            drop(wg);
-        }
+        };
     };
 
     Ok(())
