@@ -10,6 +10,7 @@ use crate::spec::tag::void::VOID_TAGS;
 use crate::unit::attr::{AttrType, process_attr, ProcessedAttr};
 use crate::unit::content::process_content;
 use crate::unit::script::process_script;
+use crate::unit::jsonscript::process_json;
 use crate::unit::style::process_style;
 use crate::gen::attrs::{ATTRS, AttributeMinification};
 use crate::spec::tag::ns::Namespace;
@@ -36,14 +37,30 @@ lazy_static! {
         s.insert(b"text/livescript");
         s.insert(b"text/x-ecmascript");
         s.insert(b"text/x-javascript");
+        s.insert(b"text/rmscript");
         s
     };
+    
+    pub static ref JSON_MIME_TYPES: HashSet<&'static [u8]> = {
+        let mut s = HashSet::<&'static [u8]>::new();
+        s.insert(b"application/json");
+        s.insert(b"application/ld+json");
+        s
+    };
+
+    pub static ref SCRIPTSTYLES_MIME_TYPES: HashSet<&'static [u8]> = {
+        let mut s = HashSet::<&'static [u8]>::new();
+        s.insert(b"text/rmstyle");
+        s
+    }; 
 }
 
 #[derive(Copy, Clone)]
 enum TagType {
     ScriptJs,
+    JsonData,
     ScriptData,
+    ScriptStyle,
     Style,
     Other,
 }
@@ -161,11 +178,28 @@ pub fn process_tag(
                 let script_tag_type_is_js = value
                     .filter(|v| !JAVASCRIPT_MIME_TYPES.contains(&proc[*v]))
                     .is_none();
-                if script_tag_type_is_js {
-                    erase_attr = true;
-                } else {
+
+                erase_attr = false;
+                if !script_tag_type_is_js {
                     // Tag does not contain JS, don't minify JS.
-                    tag_type = TagType::ScriptData;
+                    let script_tag_type_is_style = value
+                       .filter(|v| !SCRIPTSTYLES_MIME_TYPES.contains(&proc[*v]))
+                        .is_none();
+                    
+                    if script_tag_type_is_style {
+                        tag_type = TagType::ScriptStyle;
+                    } else {
+                        let script_tag_type_is_json = value
+                            .filter(|v| !JSON_MIME_TYPES.contains(&proc[*v]))
+                            .is_none();
+
+                        if script_tag_type_is_json {
+                            tag_type = TagType::JsonData;
+                        }else{
+                            erase_attr = true;
+                            tag_type = TagType::ScriptData;
+                        }
+                    }
                 };
             }
             (_, name) => {
@@ -199,6 +233,33 @@ pub fn process_tag(
                 proc.write_slice(b"/>");
             };
         };
+
+        if is_void_tag {
+            let closing_tag_checkpoint = ReadCheckpoint::new(proc);
+            let closing_tag = match proc.m(IsSeq(b"</"), Discard).require("closing tag name".to_string()) {
+                Ok(_) => 
+                    match proc.m(WhileInLookup(TAG_NAME_CHAR), Discard).require("closing tag name".to_string()){
+                        Ok(tag) => Some(tag),
+                        Err(_) => None,
+                    }
+                ,
+                Err(_) => None
+            };
+
+            return match closing_tag {
+                Some(tag) => {
+                    proc.make_lowercase(tag);
+                    if proc[tag] == proc[tag_name] {
+                        proc.m(IsSeq(b">"), Discard);
+                    }else{
+                        closing_tag_checkpoint.restore(proc);
+                    }
+                    Ok(MaybeClosingTag(None))
+                },
+                None => Ok(MaybeClosingTag(None))
+            }
+            
+        }
         return Ok(MaybeClosingTag(None));
     };
 
@@ -211,8 +272,10 @@ pub fn process_tag(
     let mut closing_tag_omitted = false;
     match tag_type {
         TagType::ScriptData => process_script(proc, cfg, false)?,
+        TagType::JsonData => process_json(proc, cfg)?,
         TagType::ScriptJs => process_script(proc, cfg, true)?,
-        TagType::Style => process_style(proc, cfg)?,
+        TagType::ScriptStyle => process_style(proc, cfg, true)?,
+        TagType::Style => process_style(proc, cfg, false)?,
         _ => closing_tag_omitted = process_content(proc, cfg, child_ns, Some(tag_name), descendant_of_pre)?.closing_tag_omitted,
     };
 
@@ -222,8 +285,8 @@ pub fn process_tag(
     };
 
     let closing_tag_checkpoint = ReadCheckpoint::new(proc);
-    proc.m(IsSeq(b"</"), Discard).require("closing tag")?;
-    let closing_tag = proc.m(WhileInLookup(TAG_NAME_CHAR), Discard).require("closing tag name")?;
+    proc.m(IsSeq(b"</"), Discard).require("closing tag".to_string())?;
+    let closing_tag = proc.m(WhileInLookup(TAG_NAME_CHAR), Discard).require("closing tag name".to_string())?;
     proc.make_lowercase(closing_tag);
 
     // We need to check closing tag matches as otherwise when we later write closing tag, it might be longer than source closing tag and cause source to be overwritten.
@@ -232,14 +295,18 @@ pub fn process_tag(
             closing_tag_checkpoint.restore(proc);
             Ok(MaybeClosingTag(None))
         } else {
+            //Ok(MaybeClosingTag(None))
             Err(ErrorType::ClosingTagMismatch {
                 expected: unsafe { String::from_utf8_unchecked(proc[tag_name].to_vec()) },
                 got: unsafe { String::from_utf8_unchecked(proc[closing_tag].to_vec()) },
             })
         }
     } else {
+        let tagname = unsafe { String::from_utf8_unchecked(proc[tag_name].to_vec()) };
+        let closingtagname = unsafe { String::from_utf8_unchecked(proc[closing_tag].to_vec()) };
+        let formated = format!("closing tag end {} {} ", tagname, closingtagname    );
         proc.m(WhileInLookup(WHITESPACE), Discard);
-        proc.m(IsChar(b'>'), Discard).require("closing tag end")?;
+        proc.m(IsChar(b'>'), Discard).require(formated)?;
         Ok(MaybeClosingTag(Some(tag_name)))
     }
 }
