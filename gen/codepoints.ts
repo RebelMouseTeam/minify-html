@@ -21,6 +21,7 @@ const UPPER_ALPHA = rangeInclusive(c('A'), c('Z'));
 const LOWER_ALPHA = rangeInclusive(c('a'), c('z'));
 const ALPHA = [...UPPER_ALPHA, ...LOWER_ALPHA];
 const ALPHANUMERIC = [...DIGIT, ...ALPHA];
+const ALPHANUMERIC_OR_EQUALS = [...DIGIT, ...ALPHA, c('=')];
 
 // Characters allowed in an attribute name.
 // NOTE: Unicode noncharacters not tested.
@@ -35,7 +36,8 @@ const SINGLE_QUOTE = [c('\'')];
 const ATTR_QUOTE = [...DOUBLE_QUOTE, ...SINGLE_QUOTE];
 // Valid unquoted attribute value characters.
 // See https://html.spec.whatwg.org/multipage/syntax.html#unquoted for spec.
-const NOT_UNQUOTED_ATTR_VAL_CHAR = [...WHITESPACE, c('"'), c('\''), c('='), c('<'), c('>'), c('`')];
+// Browsers seem to simply consider any characters until whitespace or `>` part of an unquoted attribute value, despite the spec having more restrictions on allowed characters.
+const NOT_UNQUOTED_ATTR_VAL_CHAR = [...WHITESPACE, c('>')];
 
 // Tag names may only use ASCII alphanumerics. However, some people also use `:` and `-`.
 // See https://html.spec.whatwg.org/multipage/syntax.html#syntax-tag-name for spec.
@@ -64,6 +66,7 @@ impl std::ops::Index<u8> for Lookup {
   UPPER_HEX_ALPHA,
   LOWER_HEX_ALPHA,
   HEX_DIGIT,
+  ALPHANUMERIC_OR_EQUALS,
 
   ATTR_NAME_CHAR,
 
